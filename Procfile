@@ -1,1 +1,1 @@
-echo "web: python jinx_bot.py" > Procfile
+web: python jinx_bot.py
