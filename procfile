@@ -1,0 +1,1 @@
+echo "web: python bot/jinx_bot.py" > Procfile
