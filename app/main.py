@@ -3,7 +3,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "JINX WORKING"
+    return "JINX FIXED"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
