@@ -1,1 +1,1 @@
-web: python jinx_bot.py
+web: python app/main.py
