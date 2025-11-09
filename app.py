@@ -3,6 +3,7 @@ import os
 import requests
 import asyncio
 import sys
+import json
 
 try:
     from telethon.sync import TelegramClient
