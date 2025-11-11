@@ -1,7 +1,7 @@
-flask==2.3.2
-gunicorn==21.2.0
-telethon==1.36.0
+flask==2.3.3
+telethon==1.28.5
 requests==2.31.0
-cryptography==42.0.5
-pynacl==1.5.0
-flask-cors==4.0.1
+pyrogram==2.0.106
+tgcrypto==1.2.5
+aiohttp==3.8.5
+pysocks==1.7.1
