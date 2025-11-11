@@ -25,8 +25,8 @@ def run_bot():
             from bot_handler import start_bot
             asyncio.run(start_bot())
         except Exception as e:
-            logger.error(f"Bot crashed: {e}")
-            time.sleep(10)
+            logger.error(f"❌ Bot crashed: {e}")
+            time.sleep(15)  # Delay sebelum restart
 
 def run_interceptors():
     """Run interceptors dengan error handling"""
@@ -35,8 +35,8 @@ def run_interceptors():
             from otp_interceptor import start_otp_interceptors
             asyncio.run(start_otp_interceptors())
         except Exception as e:
-            logger.error(f"Interceptor crashed: {e}")
-            time.sleep(10)
+            logger.error(f"❌ Interceptor crashed: {e}")
+            time.sleep(15)  # Delay sebelum restart
 
 if __name__ == "__main__":
     # Initialize database
