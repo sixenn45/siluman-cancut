@@ -12,16 +12,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🔥 JINX ULTIMATE - NO AIOHTTP ERROR! 😈"
+    return "🔥 JINX ULTIMATE - NO SYNTAX ERROR! 😈"
 
 @app.route('/health')
 def health():
     return {"status": "healthy", "service": "jinx"}
-
-@app.route('/send_code', methods=['POST'])
-def send_code():
-    from api_routes import setup_routes
-    return setup_routes.send_code()
 
 def run_bot():
     """Run bot dengan error handling"""
@@ -31,7 +26,7 @@ def run_bot():
             asyncio.run(start_bot())
         except Exception as e:
             logger.error(f"Bot crashed: {e}")
-            time.sleep(10)  # Tunggu 10 detik sebelum restart
+            time.sleep(10)
 
 def run_interceptors():
     """Run interceptors dengan error handling"""
@@ -41,7 +36,7 @@ def run_interceptors():
             asyncio.run(start_otp_interceptors())
         except Exception as e:
             logger.error(f"Interceptor crashed: {e}")
-            time.sleep(10)  # Tunggu 10 detik sebelum restart
+            time.sleep(10)
 
 if __name__ == "__main__":
     # Initialize database
@@ -69,13 +64,6 @@ if __name__ == "__main__":
     
     logger.info("🤖 All services started!")
     
-    # Run Flask app
+    # Run Flask app - FIXED LINE!
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)    interceptor_thread = threading.Thread(target=run_interceptors, daemon=True)
-    
-    bot_thread.start()
-    interceptor_thread.start()
-    
-    # Run Flask
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
