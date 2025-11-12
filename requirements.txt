@@ -1,7 +1,0 @@
-flask==2.3.3
-telethon==1.28.5
-requests==2.31.0
-pyrogram==2.0.106
-tgcrypto==1.2.5
-pysocks==1.7.1
-python-telegram-bot==20.7
