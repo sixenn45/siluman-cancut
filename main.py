@@ -10,16 +10,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "🔥 JINX ULTIMATE - SINGLE PROCESS! 😈"
-
-@app.route('/health')
-def health():
-    return {"status": "healthy", "service": "jinx"}
-
 def run_bot():
-    """Run bot only - NO interceptors"""
+    """Run bot only"""
     while True:
         try:
             from bot_handler import start_bot
@@ -29,7 +21,7 @@ def run_bot():
             time.sleep(15)
 
 if __name__ == "__main__":
-    # Initialize database (singleton auto-init)
+    # Initialize database
     try:
         from database_manager import init_db
         init_db()
@@ -37,19 +29,19 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"❌ Database init failed: {e}")
 
-    # Setup API routes
+    # Setup API routes - TAPI PAKAI YANG SIMPLE
     try:
-        from api_routes import setup_routes
+        from fixed_api_routes import setup_routes
         setup_routes(app)
         logger.info("✅ API routes setup")
     except Exception as e:
         logger.error(f"❌ API routes setup failed: {e}")
 
-    # Start ONLY bot (no interceptors to avoid DB conflict)
+    # Start bot
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    logger.info("🤖 Bot started (Interceptors disabled to avoid DB lock)")
+    logger.info("🤖 Bot started!")
     
     # Run Flask app
     port = int(os.environ.get("PORT", 5000))
