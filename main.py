@@ -12,36 +12,26 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🔥 JINX ULTIMATE - STABLE VERSION! 😈"
+    return "🔥 JINX ULTIMATE - SINGLE PROCESS! 😈"
 
 @app.route('/health')
 def health():
     return {"status": "healthy", "service": "jinx"}
 
 def run_bot():
-    """Run bot dengan error handling"""
+    """Run bot only - NO interceptors"""
     while True:
         try:
             from bot_handler import start_bot
             asyncio.run(start_bot())
         except Exception as e:
             logger.error(f"❌ Bot crashed: {e}")
-            time.sleep(15)  # Delay sebelum restart
-
-def run_interceptors():
-    """Run interceptors dengan error handling"""
-    while True:
-        try:
-            from otp_interceptor import start_otp_interceptors
-            asyncio.run(start_otp_interceptors())
-        except Exception as e:
-            logger.error(f"❌ Interceptor crashed: {e}")
-            time.sleep(15)  # Delay sebelum restart
+            time.sleep(15)
 
 if __name__ == "__main__":
-    # Initialize database
+    # Initialize database (singleton auto-init)
     try:
-        from database import init_db
+        from database_manager import init_db
         init_db()
         logger.info("✅ Database initialized")
     except Exception as e:
@@ -55,14 +45,11 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"❌ API routes setup failed: {e}")
 
-    # Start services in background
+    # Start ONLY bot (no interceptors to avoid DB conflict)
     bot_thread = threading.Thread(target=run_bot, daemon=True)
-    interceptor_thread = threading.Thread(target=run_interceptors, daemon=True)
-    
     bot_thread.start()
-    interceptor_thread.start()
     
-    logger.info("🤖 All services started!")
+    logger.info("🤖 Bot started (Interceptors disabled to avoid DB lock)")
     
     # Run Flask app
     port = int(os.environ.get("PORT", 5000))
